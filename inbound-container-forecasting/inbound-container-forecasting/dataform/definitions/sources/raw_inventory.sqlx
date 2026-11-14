@@ -1,0 +1,6 @@
+config {
+  type: "declaration",
+  schema: "inventory_raw",
+  name: "inventory_snapshots",
+  description: "Daily DC-level inventory snapshots (units on hand, on order, storage capacity)."
+}

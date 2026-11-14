@@ -1,0 +1,16 @@
+config {
+  type: "table",
+  schema: "intermediate",
+  description: "Planned (ASN-based) arrivals per DC per ETA date. Known ahead of time, so safe to use as a feature.",
+  bigquery: { partitionBy: "eta_date", clusterBy: ["dc_id"] },
+  assertions: { uniqueKey: ["dc_id", "eta_date"] },
+  tags: ["intermediate", "daily"]
+}
+
+SELECT
+  dc_id,
+  eta_date,
+  COUNT(*) AS planned_containers,
+  SUM(teu) AS planned_teu
+FROM ${ref("stg_asn_expected_arrivals")}
+GROUP BY dc_id, eta_date

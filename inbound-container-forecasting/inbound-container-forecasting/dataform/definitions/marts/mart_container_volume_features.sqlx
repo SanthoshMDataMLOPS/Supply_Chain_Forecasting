@@ -1,0 +1,77 @@
+config {
+  type: "table",
+  schema: "marts",
+  description: "Model-ready feature table: one row per DC per day, history + forecast horizon. Feeds the Vertex AI Feature Store and the training/inference pipelines.",
+  bigquery: { partitionBy: "arrival_date", clusterBy: ["dc_id"] },
+  assertions: {
+    uniqueKey: ["dc_id", "arrival_date"],
+    nonNull: ["dc_id", "arrival_date", "day_of_week", "is_future"]
+  },
+  tags: ["marts", "daily", "features"]
+}
+
+js {
+  const H = constants.HORIZON();
+  // Every lag >= H: features for day t+H only depend on data up to day t,
+  // so the whole horizon can be scored in one batch pass (no recursive forecasting).
+  const LAGS = [H, H + 7, H + 14, H + 28];
+}
+
+WITH dcs AS (
+  SELECT DISTINCT dc_id FROM ${ref("int_container_daily_arrivals")}
+),
+spine AS (
+  SELECT dc_id, d AS arrival_date
+  FROM dcs,
+  UNNEST(GENERATE_DATE_ARRAY(
+    DATE("${dataform.projectConfig.vars.history_start_date}"),
+    DATE_ADD(CURRENT_DATE(), INTERVAL ${H} DAY)
+  )) AS d
+),
+base AS (
+  SELECT
+    s.dc_id,
+    s.arrival_date,
+    a.container_count,
+    a.teu_total,
+    a.avg_dwell_days,
+    COALESCE(e.planned_containers, 0) AS planned_containers,
+    COALESCE(e.planned_teu, 0)        AS planned_teu,
+    i.on_order_units,
+    SAFE_DIVIDE(i.on_hand_units, i.storage_capacity_units) AS inventory_utilization,
+    s.arrival_date > CURRENT_DATE() AS is_future
+  FROM spine s
+  LEFT JOIN ${ref("int_container_daily_arrivals")} a USING (dc_id, arrival_date)
+  LEFT JOIN ${ref("int_expected_arrivals_daily")}  e ON e.dc_id = s.dc_id AND e.eta_date = s.arrival_date
+  LEFT JOIN ${ref("stg_inventory_snapshots")}      i ON i.dc_id = s.dc_id AND i.snapshot_date = s.arrival_date
+),
+filled AS (
+  -- days with no gate-in are true zeros in the past, unknown in the future
+  SELECT * REPLACE (
+    IF(is_future, container_count, COALESCE(container_count, 0)) AS container_count,
+    IF(is_future, teu_total,       COALESCE(teu_total, 0))       AS teu_total
+  )
+  FROM base
+)
+SELECT
+  dc_id,
+  arrival_date,
+  is_future,
+  container_count,                                   -- TARGET (NULL for future rows)
+  EXTRACT(DAYOFWEEK FROM arrival_date) AS day_of_week,
+  EXTRACT(WEEK FROM arrival_date)      AS week_of_year,
+  EXTRACT(MONTH FROM arrival_date)     AS month,
+  EXTRACT(DAY FROM arrival_date)       AS day_of_month,
+  IF(EXTRACT(DAYOFWEEK FROM arrival_date) IN (1, 7), 1, 0) AS is_weekend,
+  planned_containers,
+  planned_teu,
+  inventory_utilization,
+  on_order_units,
+  ${constants.lagCols("container_count", LAGS)},
+  ${constants.lagCols("teu_total", [H, H + 7])},
+  ${constants.lagCols("avg_dwell_days", [H])},
+  ${constants.rollingMean("container_count", 7, H)},
+  ${constants.rollingMean("container_count", 28, H)},
+  CURRENT_TIMESTAMP() AS feature_ts
+FROM filled
+WINDOW w AS (PARTITION BY dc_id ORDER BY arrival_date)

@@ -1,0 +1,19 @@
+config {
+  type: "table",
+  schema: "serving",
+  description: "Practical daily dock throughput per DC (p90 of completed appointments, last 90 days).",
+  assertions: { uniqueKey: ["dc_id"], nonNull: ["dc_id", "daily_dock_capacity"] },
+  tags: ["serving"]
+}
+
+SELECT
+  dc_id,
+  APPROX_QUANTILES(daily_appointments, 100)[OFFSET(90)] AS daily_dock_capacity
+FROM (
+  SELECT UPPER(TRIM(dc_id)) AS dc_id, DATE(appointment_ts) AS d, COUNT(*) AS daily_appointments
+  FROM ${ref("dock_appointments")}
+  WHERE status = "COMPLETED"
+    AND DATE(appointment_ts) >= DATE_SUB(CURRENT_DATE(), INTERVAL 90 DAY)
+  GROUP BY dc_id, d
+)
+GROUP BY dc_id

@@ -1,0 +1,24 @@
+config {
+  type: "view",
+  schema: "serving",
+  description: "Latest forecast joined to dock capacity. Drives dock scheduling and yard congestion dashboards.",
+  tags: ["serving"]
+}
+
+WITH latest AS (
+  SELECT *
+  FROM ${ref("container_volume_forecasts")}
+  QUALIFY forecast_run_ts = MAX(forecast_run_ts) OVER ()
+)
+SELECT
+  f.dc_id,
+  f.forecast_date,
+  f.predicted_containers,
+  f.lower_bound,
+  f.upper_bound,
+  f.model_version,
+  SAFE_DIVIDE(f.predicted_containers, c.daily_dock_capacity) AS dock_utilization_p50,
+  SAFE_DIVIDE(f.upper_bound, c.daily_dock_capacity)          AS dock_utilization_p90,
+  f.upper_bound > c.daily_dock_capacity                      AS congestion_risk
+FROM latest f
+LEFT JOIN ${ref("dim_dc_dock_capacity")} c USING (dc_id)

@@ -1,0 +1,22 @@
+config {
+  type: "table",
+  schema: "staging",
+  description: "DC-level inventory snapshot, one row per DC per day.",
+  bigquery: { partitionBy: "snapshot_date", clusterBy: ["dc_id"] },
+  assertions: {
+    uniqueKey: ["dc_id", "snapshot_date"],
+    nonNull: ["dc_id", "snapshot_date"],
+    rowConditions: ["on_hand_units >= 0", "storage_capacity_units > 0"]
+  },
+  tags: ["staging", "daily"]
+}
+
+SELECT
+  UPPER(TRIM(dc_id))                         AS dc_id,
+  DATE(snapshot_date)                        AS snapshot_date,
+  SUM(on_hand_units)                         AS on_hand_units,
+  SUM(on_order_units)                        AS on_order_units,
+  MAX(storage_capacity_units)                AS storage_capacity_units
+FROM ${ref("inventory_snapshots")}
+WHERE DATE(snapshot_date) >= DATE("${dataform.projectConfig.vars.history_start_date}")
+GROUP BY dc_id, snapshot_date

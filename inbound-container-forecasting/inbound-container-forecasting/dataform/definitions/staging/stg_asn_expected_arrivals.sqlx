@@ -1,0 +1,19 @@
+config {
+  type: "table",
+  schema: "staging",
+  description: "Expected arrivals per container derived from supplier ASNs (latest revision wins).",
+  bigquery: { partitionBy: "eta_date", clusterBy: ["dc_id"] },
+  assertions: { uniqueKey: ["container_id"], nonNull: ["container_id", "dc_id", "eta_date"] },
+  tags: ["staging", "daily"]
+}
+
+SELECT
+  container_id,
+  UPPER(TRIM(dc_id))        AS dc_id,
+  DATE(eta_ts)              AS eta_date,
+  SAFE_CAST(teu AS FLOAT64) AS teu,
+  asn_revision,
+  carrier_scac
+FROM ${ref("parsed_edi_asn")}
+WHERE container_id IS NOT NULL
+QUALIFY ROW_NUMBER() OVER (PARTITION BY container_id ORDER BY asn_revision DESC) = 1

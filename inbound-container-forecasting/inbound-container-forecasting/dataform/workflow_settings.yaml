@@ -1,0 +1,12 @@
+defaultProject: your-gcp-project-id
+defaultLocation: US
+defaultDataset: staging
+defaultAssertionDataset: dataform_assertions
+dataformCoreVersion: 3.0.0
+vars:
+  # Forecast horizon in days. Every lag feature is shifted by AT LEAST this many days
+  # so batch inference can score the full horizon in one pass (no recursive forecasting).
+  forecast_horizon_days: "14"
+  history_start_date: "2023-01-01"
+  # Containers sitting at the yard longer than this are counted as "detained"
+  detention_threshold_days: "4"

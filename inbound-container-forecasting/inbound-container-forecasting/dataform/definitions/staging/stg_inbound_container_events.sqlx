@@ -1,0 +1,27 @@
+config {
+  type: "table",
+  schema: "staging",
+  description: "Deduplicated container events with typed columns.",
+  bigquery: { partitionBy: "DATE(event_ts)", clusterBy: ["dc_id", "event_type"] },
+  assertions: {
+    uniqueKey: ["container_id", "event_type"],
+    nonNull: ["container_id", "dc_id", "event_ts", "event_type"]
+  },
+  tags: ["staging", "daily"]
+}
+
+SELECT
+  container_id,
+  UPPER(TRIM(dc_id))                  AS dc_id,
+  UPPER(TRIM(event_type))             AS event_type,   -- GATE_IN | DISCHARGE | GATE_OUT
+  TIMESTAMP(event_ts)                 AS event_ts,
+  SAFE_CAST(teu AS FLOAT64)           AS teu,          -- twenty-foot equivalent units
+  carrier_scac,
+  origin_port
+FROM ${ref("inbound_container_events")}
+WHERE container_id IS NOT NULL
+  AND DATE(event_ts) >= DATE("${dataform.projectConfig.vars.history_start_date}")
+QUALIFY ROW_NUMBER() OVER (
+  PARTITION BY container_id, UPPER(TRIM(event_type))
+  ORDER BY event_ts DESC
+) = 1

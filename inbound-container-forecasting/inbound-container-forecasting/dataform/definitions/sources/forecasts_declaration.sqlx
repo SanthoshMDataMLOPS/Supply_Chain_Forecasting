@@ -1,0 +1,6 @@
+config {
+  type: "declaration",
+  schema: "ml",
+  name: "container_volume_forecasts",
+  description: "Written by the Vertex AI inference pipeline (see mlops/). Declared so downstream views can ref() it."
+}

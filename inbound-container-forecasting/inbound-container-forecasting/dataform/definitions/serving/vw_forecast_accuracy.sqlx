@@ -1,0 +1,18 @@
+config {
+  type: "view",
+  schema: "serving",
+  description: "Forecast vs actual, used by model monitoring and the analytics dashboard.",
+  tags: ["serving", "monitoring"]
+}
+
+SELECT
+  f.dc_id,
+  f.forecast_date,
+  f.model_version,
+  f.predicted_containers,
+  a.container_count AS actual_containers,
+  ABS(f.predicted_containers - a.container_count) AS abs_error,
+  SAFE_DIVIDE(ABS(f.predicted_containers - a.container_count), NULLIF(a.container_count, 0)) AS ape
+FROM ${ref("container_volume_forecasts")} f
+JOIN ${ref("int_container_daily_arrivals")} a
+  ON a.dc_id = f.dc_id AND a.arrival_date = f.forecast_date

@@ -1,0 +1,7 @@
+{
+  "name": "inbound-container-forecasting-dataform",
+  "version": "1.0.0",
+  "dependencies": {
+    "@dataform/core": "3.0.0"
+  }
+}

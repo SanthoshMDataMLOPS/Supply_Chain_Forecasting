@@ -1,0 +1,38 @@
+config {
+  type: "table",
+  schema: "intermediate",
+  description: "Actual inbound container arrivals per DC per day, with yard dwell time.",
+  bigquery: { partitionBy: "arrival_date", clusterBy: ["dc_id"] },
+  assertions: { uniqueKey: ["dc_id", "arrival_date"] },
+  tags: ["intermediate", "daily"]
+}
+
+WITH gate_in AS (
+  SELECT container_id, dc_id, event_ts AS gate_in_ts, teu
+  FROM ${ref("stg_inbound_container_events")}
+  WHERE event_type = "GATE_IN"
+),
+gate_out AS (
+  SELECT container_id, event_ts AS gate_out_ts
+  FROM ${ref("stg_inbound_container_events")}
+  WHERE event_type = "GATE_OUT"
+),
+joined AS (
+  SELECT
+    i.dc_id,
+    DATE(i.gate_in_ts) AS arrival_date,
+    i.container_id,
+    i.teu,
+    TIMESTAMP_DIFF(COALESCE(o.gate_out_ts, CURRENT_TIMESTAMP()), i.gate_in_ts, HOUR) / 24.0 AS dwell_days
+  FROM gate_in i
+  LEFT JOIN gate_out o USING (container_id)
+)
+SELECT
+  dc_id,
+  arrival_date,
+  COUNT(DISTINCT container_id) AS container_count,
+  SUM(teu)                     AS teu_total,
+  AVG(dwell_days)              AS avg_dwell_days,
+  COUNTIF(dwell_days > ${dataform.projectConfig.vars.detention_threshold_days}) AS detained_containers
+FROM joined
+GROUP BY dc_id, arrival_date
